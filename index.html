@@ -16,8 +16,6 @@
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
   
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
-  
   <style>
     :root { --font-size: 16px; }
     body, html { height: 100%; overflow: hidden; font-size: 1.2rem; }
@@ -62,20 +60,12 @@
 </head>
 
 <body>
-  <!-- TELA DE LOGIN (INICIAL) -->
+  <!-- TELA DE LOGIN / ACESSO INVÁLIDO -->
   <main id="login-view" class="container-fluid view active">
     <div>
       <img src="logo.png" alt="Logo do KiddoPlan" class="app-logo">
       <h1 id="digital-clock-login">00:00:00</h1>
-      <p>Bem-vindo! Por favor, entre com sua conta Google para continuar.</p>
-      <div id="g_id_onload"
-           data-client_id="20209298626-31psl4e8c4htn8s6uekd38mphhe49qlj.apps.googleusercontent.com"
-           data-callback="handleLogin"
-           data-auto_select="true"
-           data-login_uri=""
-           data-use_fedcm_for_prompt="false">
-      </div>
-      <div class="g_id_signin" data-type="standard" data-size="large" data-theme="outline"></div>
+      <p id="login-message">Verificando acesso...</p>
       <p id="login-error" style="color: var(--form-element-invalid-border-color);"></p>
     </div>
   </main>
@@ -140,14 +130,14 @@
   </dialog>
 
   <script>
-    const API_URL = "https://script.googleapis.com/v1/scripts/AKfycbzKBPzc4APdk-lIqx1vsPocnaAzQC5IG7DIqL9Pe0PtOBcKZtR5DoyG7dNbhnQ8Cksq:run";
+    const API_URL = "";
 
     const state = {
       currentView: 'login-view',
-      childKey: null, // ex: 'odara'
+      childKey: null,
       events: [],
       isParent: false,
-      authToken: null,
+      userKey: null, // Armazena a chave de acesso da URL
       currentCentralDate: new Date(),
       isLoading: false,
       currentEventIdToScore: null,
@@ -160,65 +150,66 @@
     const PONTUACAO_EMOJI = { pessimo: '😖', ruim: '😕', regular: '😐', bom: '🙂', otimo: '🤩', indefinido: '🤔' };
 
     async function callApi(action, payload = {}) {
-      if (!state.authToken) throw new Error("Usuário não autenticado.");
-      const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.authToken}` };
-      const body = { action, ...payload, childKey: state.childKey };
-        try {
+      if (!state.userKey) throw new Error("Chave de usuário não definida.");
+      // A chave de acesso agora é enviada no corpo da requisição
+      const body = { action, ...payload, userKey: state.userKey, childKey: state.childKey };
+      try {
         const response = await fetch(API_URL, {
-            method: 'POST', mode: 'cors', headers: headers, redirect: 'follow',
-            body: JSON.stringify(body)
+          method: 'POST',
+          mode: 'cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          redirect: 'follow'
         });
-        // Adiciona verificação de status HTTP
-        if (!response.ok) {
-            // Tenta ler o corpo do erro se houver, senão usa o statusText
-            let errorMsg = `HTTP error! status: ${response.status} ${response.statusText}`;
-            try {
-                const errorData = await response.json();
-                if (errorData.error) {
-                    errorMsg = errorData.error;
-                }
-            } catch (e) {
-                // O corpo do erro não era JSON, ignora.
-            }
-            throw new Error(errorMsg);
-        }
         const data = await response.json();
         if (data.error) throw new Error(data.error);
         return data;
-        } catch (error) {
+      } catch (error) {
         console.error('API Call Error:', error.message);
-        // Relança o erro com uma mensagem limpa para que o handleLogin possa exibi-la.
-        throw error; 
-        }
+        document.getElementById('login-error').textContent = `Erro de comunicação: ${error.message}`;
+        showView('login-view');
+        throw error;
+      }
     }
 
-    async function handleLogin(response) {
-      try {
-        document.getElementById('login-error').textContent = '';
-        state.authToken = response.credential;
-        const initialData = await callApi('getInitialData');
-        state.isParent = initialData.isParent;
-        
-        if (initialData.isParent) {
-          const selectorGrid = document.getElementById('child-selector-grid');
-          selectorGrid.innerHTML = '';
-          initialData.viewableChildren.forEach(child => {
-            const button = document.createElement('button');
-            button.innerHTML = `<strong>${child.name}</strong>`;
-            button.style.fontSize = '1.8rem';
-            button.onclick = () => selectChild(child.id);
-            selectorGrid.appendChild(button);
-          });
-          showView('home-view');
-        } else {
-          const childKey = initialData.viewableChildren[0]?.id;
-          if (!childKey) throw new Error("Perfil de criança não encontrado ou não autorizado.");
-          selectChild(childKey);
+    async function initializeApp() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const userKey = urlParams.get('user');
+        const apiUrlFromParam = urlParams.get('apiUrl'); // Lê o novo parâmetro
+
+        // Verifica se AMBOS os parâmetros essenciais existem
+        if (!userKey || !apiUrlFromParam) {
+            document.getElementById('login-message').textContent = 'Acesso não autorizado. URL inválida ou incompleta.';
+            return;
         }
-      } catch (error) {
-        document.getElementById('login-error').textContent = `Erro no login: ${error.message}`;
-        state.authToken = null;
-      }
+
+        API_URL = apiUrlFromParam; // Define a URL da API para ser usada em todo o app
+        state.userKey = userKey;
+        
+        try {
+            const initialData = await callApi('getInitialData');
+            state.isParent = initialData.isParent;
+            
+            if (initialData.isParent) {
+            const selectorGrid = document.getElementById('child-selector-grid');
+            selectorGrid.innerHTML = '';
+            initialData.viewableChildren.forEach(child => {
+                const button = document.createElement('button');
+                button.innerHTML = `<strong>${child.name}</strong>`;
+                button.style.fontSize = '1.8rem';
+                button.onclick = () => selectChild(child.id);
+                selectorGrid.appendChild(button);
+            });
+            showView('home-view');
+            } else {
+            const childKey = initialData.viewableChildren[0]?.id;
+            if (!childKey) throw new Error("Perfil de criança não encontrado ou não autorizado.");
+            selectChild(childKey);
+            }
+        } catch (error) {
+            document.getElementById('login-message').textContent = 'Erro ao iniciar.';
+            document.getElementById('login-error').textContent = `Detalhes: ${error.message}`;
+        }
     }
 
     function selectChild(childKey) {
@@ -228,13 +219,11 @@
     }
     
     function logout() {
-      state.authToken = null;
+      state.userKey = null;
       state.childKey = null;
       state.isParent = false;
-      if (typeof google !== 'undefined') {
-          google.accounts.id.disableAutoSelect();
-      }
-      window.location.reload();
+      // Redireciona para a mesma página, mas sem os parâmetros na URL, forçando a tela de "acesso inválido"
+      window.location.href = window.location.pathname;
     }
 
     function showView(viewId) {
@@ -504,6 +493,9 @@
       updateCurrentEventState();
       checkAlarms();
     }
+    
+    // Iniciar o aplicativo quando o script for carregado
+    initializeApp();
     
     setInterval(updateClock, 1000);
     setInterval(runMinuteTasks, 60000);
