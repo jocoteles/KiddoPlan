@@ -162,18 +162,33 @@
       if (!state.authToken) throw new Error("Usuário não autenticado.");
       const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.authToken}` };
       const body = { action, ...payload, childKey: state.childKey };
-      try {
+        try {
         const response = await fetch(API_URL, {
-          method: 'POST', mode: 'cors', headers: headers, redirect: 'follow',
-          body: JSON.stringify(body)
+            method: 'POST', mode: 'cors', headers: headers, redirect: 'follow',
+            body: JSON.stringify(body)
         });
+        // Adiciona verificação de status HTTP
+        if (!response.ok) {
+            // Tenta ler o corpo do erro se houver, senão usa o statusText
+            let errorMsg = `HTTP error! status: ${response.status} ${response.statusText}`;
+            try {
+                const errorData = await response.json();
+                if (errorData.error) {
+                    errorMsg = errorData.error;
+                }
+            } catch (e) {
+                // O corpo do erro não era JSON, ignora.
+            }
+            throw new Error(errorMsg);
+        }
         const data = await response.json();
         if (data.error) throw new Error(data.error);
         return data;
-      } catch (error) {
+        } catch (error) {
         console.error('API Call Error:', error.message);
-        throw error;
-      }
+        // Relança o erro com uma mensagem limpa para que o handleLogin possa exibi-la.
+        throw error; 
+        }
     }
 
     async function handleLogin(response) {
