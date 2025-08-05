@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <base target="_top">
+
+  <title>KiddoPlan</title>
+  <meta name="application-name" content="KiddoPlan">
+  <meta name="apple-mobile-web-app-title" content="KiddoPlan">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1095c1">
+  <link rel="apple-touch-icon" href="logo.png">
+  <link rel="icon" href="logo.png">
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+  
+  <style>
+    :root { --font-size: 16px; }
+    body, html { height: 100%; overflow: hidden; font-size: 1.2rem; }
+    .view { display: none; height: 100vh; flex-direction: column; }
+    .view.active { display: flex; }
+    #score-view main.container, #events-view #events-list { overflow-y: auto; flex-grow: 1; padding: 1rem; }
+    
+    #login-view, #home-view { justify-content: center; align-items: center; text-align: center; padding: 1rem; }
+    .app-logo { max-width: 500px; width: 80%; height: auto; margin-bottom: 2rem; }
+    #digital-clock-login, #events-view-clock { font-size: 5rem; font-weight: bold; margin-bottom: 2rem; }
+    
+    #events-view header { position: sticky; top: 0; background-color: var(--card-background-color, white); z-index: 10; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .day-separator { text-align: center; font-weight: bold; color: var(--muted-color, #6c757d); padding: 1.5rem 0 0.5rem 0; border-bottom: 1px solid var(--muted-border-color, #dee2e6); margin-bottom: 1rem; }
+    
+    .evento { padding: 1rem; margin-bottom: 1rem; border-radius: 8px; border: 2px solid transparent; transition: all 0.2s; cursor: pointer; }
+    .evento.evento-atual { border-color: var(--primary, #1095c1); box-shadow: 0 0 15px var(--primary-focus, rgba(16, 149, 193, 0.5)); }
+    .evento.visto-bloqueado { cursor: not-allowed; opacity: 0.7; transform: scale(0.98); transition: all 0.1s; }
+    .evento-content { display: flex; align-items: center; width: 100%; }
+    .horario { font-weight: bold; }
+    .titulo { flex-grow: 1; text-align: center; margin: 0 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .visto { font-size: 1.5rem; margin-right: 0.5rem; width: 28px; display: inline-block; text-align: center; }
+    .pontuacao { font-size: 1.8rem; }
+    .feedback-area { margin-left: auto; display: flex; align-items: center; }
+    
+    .tag-vermelho { background-color: #fecaca; } .tag-laranja  { background-color: #fed7aa; } .tag-amarelo  { background-color: #fef08a; } .tag-verde    { background-color: #bbf7d0; } .tag-azul     { background-color: #bfdbfe; } .tag-violeta  { background-color: #ddd6fe; } .tag-rosa     { background-color: #fbcfe8; } .tag-marrom   { background-color: #e7e5e4; } .tag-padrao   { background-color: #f3f4f6; }
+    
+    #date-nav-buttons { position: fixed; bottom: 0; left: 0; right: 0; display: flex; justify-content: center; gap: 1rem; padding: 1rem; background-color: rgba(255, 255, 255, 0.8); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); z-index: 100; }
+    #date-nav-buttons button { padding: 0.5rem 1rem; margin: 0; }
+    dialog .grid { grid-template-columns: repeat(5, 1fr); gap: 1rem; }
+    dialog button { font-size: 2rem; padding: 1rem; }
+
+    .score-period-wrapper { margin-bottom: 2.5rem; }
+    .score-period-wrapper .grid { grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+
+    @media (max-width: 768px) {
+      #digital-clock-login, #events-view-clock { font-size: 3rem; margin-bottom: 1rem; }
+      #events-view header nav { flex-direction: column; align-items: center; gap: 0.25rem; padding-bottom: 0.5rem; }
+      #events-view header nav > * { line-height: 1.2; margin: 0; }
+      #events-view .evento .titulo { white-space: normal; overflow: visible; text-overflow: clip; text-align: left; }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- TELA DE LOGIN / ACESSO INVÁLIDO -->
+  <main id="login-view" class="container-fluid view active">
+    <div>
+      <img src="logo.png" alt="Logo do KiddoPlan" class="app-logo">
+      <h1 id="digital-clock-login">00:00:00</h1>
+      <p id="login-message">Verificando acesso...</p>
+      <p id="login-error" style="color: var(--form-element-invalid-border-color);"></p>
+    </div>
+  </main>
+  
+  <!-- TELA DE SELEÇÃO DE CRIANÇA (PARA PAIS) -->
+  <main id="home-view" class="container-fluid view">
+    <div>
+      <img src="logo.png" alt="Logo do KiddoPlan" class="app-logo">
+      <h1>Selecione um perfil</h1>
+      <div id="child-selector-grid" class="grid"></div>
+       <hr>
+       <a href="#" role="button" class="contrast" onclick="logout(); return false;">Sair</a>
+    </div>
+  </main>
+
+  <!-- TELA DE EVENTOS -->
+  <div id="events-view" class="view">
+    <header class="container-fluid">
+      <nav>
+        <ul><li><strong id="child-name-header" style="font-size: 2rem;"></strong></li></ul>
+        <h1 id="events-view-clock">00:00:00</h1>
+        <ul>
+          <li><a href="#" role="button" class="secondary" id="score-button" style="display: none;" onclick="showScoreView(); return false;">Pontuação</a></li>
+          <li><a href="#" role="button" class="contrast" onclick="logout(); return false;">Sair</a></li>
+        </ul>
+      </nav>
+    </header>
+    <div id="events-list"></div>
+    <div id="date-nav-buttons">
+      <button onclick="navigateDays(-3); return false;">🔼Anterior</button>
+      <button onclick="goToToday(); return false;">Atual</button>
+      <button onclick="navigateDays(3); return false;">Seguinte🔽</button>
+    </div>
+  </div>
+
+  <!-- TELA DE PONTUAÇÃO -->
+  <div id="score-view" class="view">
+    <header class="container-fluid">
+       <nav>
+         <ul><li><strong>Pontuação - <span id="score-child-name"></span></strong></li></ul>
+         <ul><li><a href="#" role="button" onclick="showEventsView(); return false;">Voltar</a></li></ul>
+       </nav>
+    </header>
+    <main class="container">
+      <div id="score-content">
+        <div class="score-period-wrapper"><h4 style="text-align: center;">Diária</h4><h5 id="score-label-day" style="text-align: center; color: var(--muted-color);"></h5><div id="score-card-day"><article aria-busy="true"></article></div><div class="grid"><button onclick="navigateScore('day', -1)">🔼Anterior</button><button onclick="navigateScore('day', 0)" class="secondary">Atual</button><button id="score-nav-next-day" onclick="navigateScore('day', 1)">Seguinte🔽</button></div></div>
+        <div class="score-period-wrapper"><h4 style="text-align: center;">Semanal</h4><h5 id="score-label-week" style="text-align: center; color: var(--muted-color);"></h5><div id="score-card-week"><article aria-busy="true"></article></div><div class="grid"><button onclick="navigateScore('week', -1)">🔼Anterior</button><button onclick="navigateScore('week', 0)" class="secondary">Atual</button><button id="score-nav-next-week" onclick="navigateScore('week', 1)">Seguinte🔽</button></div></div>
+        <div class="score-period-wrapper"><h4 style="text-align: center;">Mensal</h4><h5 id="score-label-month" style="text-align: center; color: var(--muted-color);"></h5><div id="score-card-month"><article aria-busy="true"></article></div><div class="grid"><button onclick="navigateScore('month', -1)">🔼Anterior</button><button onclick="navigateScore('month', 0)" class="secondary">Atual</button><button id="score-nav-next-month" onclick="navigateScore('month', 1)">Seguinte🔽</button></div></div>
+      </div>
+    </main>
+  </div>
+  
+  <!-- MODAL DE PONTUAÇÃO -->
+  <dialog id="score-modal">
+    <article>
+      <header><a href="#" aria-label="Close" class="close" onclick="closeModal(); return false;"></a>Pontuar Evento</header>
+      <p id="modal-event-title"></p>
+      <div class="grid">
+        <button onclick="rateEvent('pessimo')">😖</button><button onclick="rateEvent('ruim')">😕</button><button onclick="rateEvent('regular')">😐</button><button onclick="rateEvent('bom')">🙂</button><button onclick="rateEvent('otimo')">🤩</button>
+      </div>
+    </article>
+  </dialog>
+
+  <script>
+    let API_URL = "";
+
+    const state = {
+      currentView: 'login-view',
+      childKey: null,
+      events: [],
+      isParent: false,
+      userKey: null, // Armazena a chave de acesso da URL
+      currentCentralDate: new Date(),
+      isLoading: false,
+      currentEventIdToScore: null,
+      inactivityTimer: null,
+      alarmInterval: null,
+      isCurrentAlarmSilenced: false,
+      currentEventId: null,
+      scoreDates: { day: new Date(), week: new Date(), month: new Date() }
+    };
+    const PONTUACAO_EMOJI = { pessimo: '😖', ruim: '😕', regular: '😐', bom: '🙂', otimo: '🤩', indefinido: '🤔' };
+
+    async function callApi(action, payload = {}) {
+      if (!state.userKey) throw new Error("Chave de usuário não definida.");
+      // A chave de acesso agora é enviada no corpo da requisição
+      const body = { action, ...payload, userKey: state.userKey, childKey: state.childKey };
+      try {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          mode: 'cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          redirect: 'follow'
+        });
+        const data = await response.json();
+        if (data.error) throw new Error(data.error);
+        return data;
+      } catch (error) {
+        console.error('API Call Error:', error.message);
+        document.getElementById('login-error').textContent = `Erro de comunicação: ${error.message}`;
+        showView('login-view');
+        throw error;
+      }
+    }
+
+    async function initializeApp() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const userKey = urlParams.get('user');
+        const apiUrlFromParam = urlParams.get('apiUrl'); // Lê o novo parâmetro
+
+        // Verifica se AMBOS os parâmetros essenciais existem
+        if (!userKey || !apiUrlFromParam) {
+            document.getElementById('login-message').textContent = 'Acesso não autorizado. URL inválida ou incompleta.';
+            return;
+        }
+
+        API_URL = apiUrlFromParam; // Define a URL da API para ser usada em todo o app
+        state.userKey = userKey;
+        
+        try {
+            const initialData = await callApi('getInitialData');
+            state.isParent = initialData.isParent;
+            
+            if (initialData.isParent) {
+            const selectorGrid = document.getElementById('child-selector-grid');
+            selectorGrid.innerHTML = '';
+            initialData.viewableChildren.forEach(child => {
+                const button = document.createElement('button');
+                button.innerHTML = `<strong>${child.name}</strong>`;
+                button.style.fontSize = '1.8rem';
+                button.onclick = () => selectChild(child.id);
+                selectorGrid.appendChild(button);
+            });
+            showView('home-view');
+            } else {
+            const childKey = initialData.viewableChildren[0]?.id;
+            if (!childKey) throw new Error("Perfil de criança não encontrado ou não autorizado.");
+            selectChild(childKey);
+            }
+        } catch (error) {
+            document.getElementById('login-message').textContent = 'Erro ao iniciar.';
+            document.getElementById('login-error').textContent = `Detalhes: ${error.message}`;
+        }
+    }
+
+    function selectChild(childKey) {
+      state.childKey = childKey;
+      initAudioContext();
+      goToToday();
+    }
+    
+    function logout() {
+      state.userKey = null;
+      state.childKey = null;
+      state.isParent = false;
+      // Redireciona para a mesma página, mas sem os parâmetros na URL, forçando a tela de "acesso inválido"
+      window.location.href = window.location.pathname;
+    }
+
+    function showView(viewId) {
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      const view = document.getElementById(viewId);
+      if(view) view.classList.add('active');
+      state.currentView = viewId;
+      if (viewId === 'events-view' || viewId === 'score-view') {
+        document.getElementById('score-button').style.display = state.isParent ? 'block' : 'none';
+      }
+      if (viewId === 'events-view') {
+        runMinuteTasks();
+      }
+    }
+    
+    function showEventsView() { showView('events-view'); }
+
+    function showScoreView() {
+      if (!state.isParent) return;
+      const childNameEl = document.getElementById('child-name-header');
+      if (childNameEl) {
+        document.getElementById('score-child-name').textContent = childNameEl.textContent;
+      }
+      state.scoreDates = { day: new Date(), week: new Date(), month: new Date() };
+      loadScoreForPeriod('day');
+      loadScoreForPeriod('week');
+      loadScoreForPeriod('month');
+      showView('score-view');
+    }
+
+    function updateClock() {
+      const timeString = new Date().toLocaleTimeString('pt-BR');
+      const loginClock = document.getElementById('digital-clock-login');
+      if (loginClock) loginClock.textContent = timeString;
+      const eventsClock = document.getElementById('events-view-clock');
+      if (eventsClock) eventsClock.textContent = timeString;
+    }
+
+    function fetchEventsForWindow(onCompleteCallback) {
+      if (state.isLoading || !state.childKey) return;
+      state.isLoading = true;
+      document.getElementById('events-list').innerHTML = '<progress></progress>';
+      const centralDate = state.currentCentralDate;
+      const startDate = new Date(centralDate);
+      startDate.setDate(centralDate.getDate() - 2);
+      const endDate = new Date(centralDate);
+      endDate.setDate(centralDate.getDate() + 2);
+      callApi('getEventsForChild', {
+        startDateISO: startDate.toISOString(),
+        endDateISO: endDate.toISOString()
+      }).then(response => {
+        state.isParent = response.isParent;
+        state.events = response.events || [];
+        document.getElementById('child-name-header').textContent = response.childName;
+        renderEventsList();
+        if (onCompleteCallback) onCompleteCallback();
+        if (state.currentView !== 'events-view') showView('events-view');
+      }).catch(error => {
+        document.getElementById('events-list').innerHTML = `<article><h4>Erro ao buscar eventos</h4><p>${error.message}</p></article>`;
+      }).finally(() => { state.isLoading = false; });
+    }
+
+    function navigateDays(days) {
+      state.currentCentralDate.setDate(state.currentCentralDate.getDate() + days);
+      fetchEventsForWindow();
+    }
+
+    function goToToday() {
+      state.currentCentralDate = new Date();
+      fetchEventsForWindow(scrollToCurrent);
+    }
+    
+    function renderEventsList() {
+      const listContainer = document.getElementById('events-list');
+      listContainer.innerHTML = '';
+      let lastDisplayedDay = null;
+      if (state.events.length === 0) {
+        listContainer.innerHTML = '<p style="text-align: center; margin-top: 2rem;">Nenhum evento encontrado para estes dias.</p>';
+        updateCurrentEventState();
+        return;
+      }
+      state.events.forEach((event, index) => {
+        const start = new Date(event.start);
+        const eventDay = start.toDateString();
+        if (eventDay !== lastDisplayedDay) {
+          const daySeparatorEl = document.createElement('div');
+          daySeparatorEl.className = 'day-separator';
+          const dayOfWeek = start.toLocaleDateString('pt-BR', { weekday: 'long' });
+          const dateString = start.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+          daySeparatorEl.textContent = `------- ${dateString} (${dayOfWeek}) -------`;
+          listContainer.appendChild(daySeparatorEl);
+          lastDisplayedDay = eventDay;
+        }
+        const el = document.createElement('div');
+        el.id = `event-${event.id}`;
+        const cores = ['vermelho', 'laranja', 'amarelo', 'verde', 'azul', 'violeta', 'rosa', 'marrom'];
+        const tag = event.tags.find(t => cores.includes(t.toLowerCase())) || 'padrao';
+        el.className = `evento tag-${tag}`;
+        el.innerHTML = `<div class="evento-content"><span class="horario">${start.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span><span class="titulo">${event.title}</span><div class="feedback-area"><span class="visto">${event.checked ? '✅' : ''}</span><span class="pontuacao">${PONTUACAO_EMOJI[event.score]}</span></div></div>`;
+        el.onclick = () => handleEventClick(event, index);
+        listContainer.appendChild(el);
+      });
+      updateCurrentEventState();
+    }
+
+    function handleEventClick(event, index) {
+      if (event.id === state.currentEventId && state.alarmInterval) silenceAlarm();
+      if (state.isParent) openScoreModal(event);
+      else toggleCheck(event, index);
+    }
+
+    async function toggleCheck(event, index) {
+      const now = new Date();
+      const start = new Date(event.start);
+      if (now < start || (state.events[index + 1] && now >= new Date(state.events[index + 1].start))) {
+        const el = document.getElementById(`event-${event.id}`);
+        if(el) { el.classList.add('visto-bloqueado'); setTimeout(() => el.classList.remove('visto-bloqueado'), 500); }
+        return;
+      }
+      const originalState = event.checked;
+      event.checked = !originalState;
+      renderEventsList();
+      try {
+        await callApi('toggleEventCheck', { eventId: event.id, isChecked: !originalState });
+      } catch (e) {
+        event.checked = originalState;
+        renderEventsList();
+        alert(`Erro ao salvar: ${e.message}`);
+      }
+    }
+
+    async function rateEvent(scoreKey) {
+      const eventToUpdate = state.events.find(e => e.id === state.currentEventIdToScore);
+      if (!eventToUpdate) return;
+      const originalScore = eventToUpdate.score;
+      eventToUpdate.score = scoreKey;
+      renderEventsList();
+      closeModal();
+      try {
+        await callApi('saveEventScore', { eventId: state.currentEventIdToScore, scoreKey: scoreKey });
+      } catch (e) {
+        eventToUpdate.score = originalScore;
+        renderEventsList();
+        alert(e.message);
+      }
+    }
+    
+    function loadScoreForPeriod(period) {
+      const cardDiv = document.getElementById(`score-card-${period}`);
+      const labelEl = document.getElementById(`score-label-${period}`);
+      const nextButton = document.getElementById(`score-nav-next-${period}`);
+      cardDiv.innerHTML = '<article aria-busy="true"></article>';
+      labelEl.textContent = 'Carregando...';
+      const referenceDateISO = state.scoreDates[period].toISOString();
+      callApi('getScores', { period: period, dateISO: referenceDateISO })
+        .then(res => {
+          labelEl.textContent = res.label;
+          cardDiv.innerHTML = `<article><p><strong>Pontos:</strong> ${res.totalScore} / ${res.maxPossibleScore} (${res.percentage}%)</p><progress value="${res.percentage}" max="100"></progress><p style="margin-top: 1rem;"><strong>Vistos:</strong> ${res.checkedCount} de ${res.eligibleForCheckCount} (${res.checkedPercentage}%)</p></article>`;
+          const today = new Date();
+          today.setHours(23, 59, 59, 999);
+          nextButton.disabled = (state.scoreDates[period] >= today);
+        }).catch(err => {
+          cardDiv.innerHTML = `<article>Erro ao carregar dados: ${err.message}</article>`;
+          labelEl.textContent = 'Erro';
+        });
+    }
+    
+    function navigateScore(period, direction) {
+      const currentDate = state.scoreDates[period];
+      if (direction === 0) state.scoreDates[period] = new Date();
+      else if (period === 'day') currentDate.setDate(currentDate.getDate() + direction);
+      else if (period === 'week') currentDate.setDate(currentDate.getDate() + (7 * direction));
+      else if (period === 'month') currentDate.setMonth(currentDate.getMonth() + direction);
+      loadScoreForPeriod(period);
+    }
+    
+    function openScoreModal(event) {
+      state.currentEventIdToScore = event.id;
+      document.getElementById('modal-event-title').textContent = event.title;
+      document.getElementById('score-modal').showModal();
+    }
+    function closeModal() { document.getElementById('score-modal').close(); }
+    
+    let audioCtx;
+    const noteToFreq = { 'C5': 523.25, 'E5': 659.25, 'G5': 783.99, 'C6': 1046.50 };
+    function initAudioContext() { if (!audioCtx) try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === 'suspended') audioCtx.resume(); } catch (e) { console.error("KiddoPlan: Som não pôde ser iniciado.", e); } }
+    
+    function playAlarmJingle() {
+        if (!audioCtx || audioCtx.state !== 'running') return;
+        const melody = [ { note: 'G5', duration: 0.15 }, { note: 'C6', duration: 0.30 } ];
+        const now = audioCtx.currentTime;
+        let cumulativeTime = 0;
+        melody.forEach(item => {
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(noteToFreq[item.note], now + cumulativeTime);
+            gainNode.gain.setValueAtTime(0, now + cumulativeTime);
+            gainNode.gain.linearRampToValueAtTime(0.5, now + cumulativeTime + 0.01);
+            gainNode.gain.linearRampToValueAtTime(0, now + cumulativeTime + item.duration);
+            osc.start(now + cumulativeTime);
+            osc.stop(now + cumulativeTime + item.duration);
+            cumulativeTime += item.duration;
+        });
+    }
+    
+    function silenceAlarm() {
+        clearInterval(state.alarmInterval);
+        state.alarmInterval = null;
+        state.isCurrentAlarmSilenced = true;
+    }
+    
+    function scrollToCurrent() {
+      const currentElement = document.querySelector('.evento-atual');
+      if (currentElement) {
+        currentElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+    
+    function updateCurrentEventState() {
+        if (state.events.length === 0) return;
+        const now = new Date();
+        let currentEvent = null;
+        let lastPastEvent = null;
+        state.events.forEach(event => {
+            const start = new Date(event.start);
+            const end = new Date(event.end);
+            if (now >= start && now <= end) {
+                currentEvent = event;
+            } else if (now > end) {
+                lastPastEvent = event;
+            }
+        });
+        document.querySelectorAll('.evento.evento-atual').forEach(el => el.classList.remove('evento-atual'));
+        const eventToHighlight = currentEvent || lastPastEvent;
+        if (eventToHighlight) {
+            const elToHighlight = document.getElementById(`event-${eventToHighlight.id}`);
+            if (elToHighlight) { elToHighlight.classList.add('evento-atual'); }
+        }
+        const newCurrentEventId = currentEvent ? currentEvent.id : null;
+        if (newCurrentEventId !== state.currentEventId) {
+            state.currentEventId = newCurrentEventId;
+            state.isCurrentAlarmSilenced = false;
+            if(newCurrentEventId) {
+                scrollToCurrent(); 
+            }
+        }
+    }
+    
+    function checkAlarms() {
+      if (state.alarmInterval) {
+        clearInterval(state.alarmInterval);
+        state.alarmInterval = null;
+      }
+      if (state.isCurrentAlarmSilenced || !state.currentEventId) return;
+      const currentEvent = state.events.find(e => e.id === state.currentEventId);
+      if (currentEvent && currentEvent.tags.includes('alarme')) {
+        playAlarmJingle(); 
+        state.alarmInterval = setInterval(playAlarmJingle, 2000);
+      }
+    }
+
+    function runMinuteTasks() {
+      if (state.isLoading || state.currentView !== 'events-view') return;
+      updateCurrentEventState();
+      checkAlarms();
+    }
+    
+    // Iniciar o aplicativo quando o script for carregado
+    initializeApp();
+    
+    setInterval(updateClock, 1000);
+    setInterval(runMinuteTasks, 60000);
+  </script>
+</body>
+</html>
